@@ -1,0 +1,132 @@
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -1,4 +1,4 @@
+-name: Build, test and publish
++name: Build, test, publish and deploy
+ 
+ on:
+   push:
+@@ -14,6 +14,8 @@
+   build:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 15
++    outputs:
++      image: ${{ steps.publish.outputs.image }}
+     env:
+       YC_REGISTRY_ID: ${{ vars.YC_REGISTRY_ID }}
+     steps:
+@@ -70,6 +72,7 @@
+           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+ 
+       - name: Publish tested image
++        id: publish
+         if: github.event_name != 'pull_request'
+         env:
+           APP_VERSION: ${{ steps.version.outputs.value }}
+@@ -82,4 +85,55 @@
+             docker tag diploma-app:test "$repository:$APP_VERSION"
+             docker push "$repository:$APP_VERSION"
+           fi
++          image_ref="$(docker image inspect "$repository:sha-$GITHUB_SHA" --format '{{index .RepoDigests 0}}')"
++          test -n "$image_ref"
++          echo "image=$image_ref" >> "$GITHUB_OUTPUT"
+           printf 'Published image: `%s:sha-%s`\n' "$repository" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
++
++  deploy:
++    needs: build
++    if: github.event_name == 'push' && github.ref_type == 'tag'
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    concurrency:
++      group: diploma-app-deploy
++      cancel-in-progress: false
++    env:
++      APP_URL: ${{ vars.APP_URL }}
++    steps:
++      - uses: actions/checkout@v5
++
++      - name: Install matching kubectl
++        uses: azure/setup-kubectl@v4
++        with:
++          version: v1.37.2
++
++      - name: Configure cluster access
++        env:
++          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
++        run: |
++          set -euo pipefail
++          test -n "$KUBE_CONFIG" || { echo 'Set Actions secret KUBE_CONFIG.' >&2; exit 1; }
++          test -n "$APP_URL" || { echo 'Set Actions variable APP_URL.' >&2; exit 1; }
++          umask 077
++          kubeconfig_path="$RUNNER_TEMP/diploma-kubeconfig"
++          printf '%s' "$KUBE_CONFIG" > "$kubeconfig_path"
++          echo "KUBECONFIG=$kubeconfig_path" >> "$GITHUB_ENV"
++
++      - name: Deploy tested image by digest
++        env:
++          IMAGE_REF: ${{ needs.build.outputs.image }}
++        run: |
++          set -euo pipefail
++          test -n "$IMAGE_REF"
++          kubectl -n diploma set image deployment/diploma-app "diploma-app=$IMAGE_REF"
++          kubectl -n diploma rollout status deployment/diploma-app --timeout=300s
++
++      - name: Verify public application version
++        run: |
++          bash scripts/smoke-test.sh "$APP_URL" "$GITHUB_REF_NAME"
++          printf 'Deployed release: `%s`\n' "$GITHUB_REF_NAME" >> "$GITHUB_STEP_SUMMARY"
++
++      - name: Remove runner credentials
++        if: always()
++        run: rm -f "$RUNNER_TEMP/diploma-kubeconfig"
+--- a/README.md
++++ b/README.md
+@@ -2,7 +2,7 @@
+ 
+ Статическая страница на nginx. Собственный Dockerfile использует
+ `nginx:1.30.6-alpine`. Контейнер работает от пользователя nginx на порту 8080.
+-В Kubernetes внешний HTTP-доступ на порту 80 будет настроен через Ingress.
++В Kubernetes внешний HTTP-доступ на порту 80 настроен через Traefik Ingress.
+ 
+ | Путь | Назначение |
+ | --- | --- |
+@@ -37,11 +37,36 @@
+ | --- | --- | --- |
+ | Repository variable | `YC_REGISTRY_ID` | ID реестра из Terraform |
+ | Repository secret | `YC_SA_JSON_CREDENTIALS` | JSON авторизованного ключа аккаунта diploma-app-ci |
++| Repository variable | `APP_URL` | Публичный HTTP URL приложения из Terraform output web_ip |
++| Repository secret | `KUBE_CONFIG` | Содержимое .secrets/kubeconfig-github-deployer из инфраструктурного проекта |
+ 
+ Сервисный аккаунт создаётся Terraform bootstrap-конфигурацией инфраструктурного
+ репозитория. Ему назначается роль `container-registry.images.pusher` на каталог.
+ Авторизованный ключ создаётся локально и хранится в Actions secret.
+ 
+-Автоматический деплой по тегу будет добавлен после настройки Kubernetes-манифестов
+-и отдельного доступа CI к namespace приложения. Текущий workflow выполняет CI
+-и публикацию образа; стадия CD ещё не настроена.
++При push Git-тега после успешной сборки и публикации выполняется job deploy.
++В Deployment diploma/diploma-app подставляется проверенный образ по digest,
++затем workflow ожидает завершения rollout и проверяет публичную страницу,
++health endpoint и версию приложения. Например, тег v1.0.1 должен привести
++к значению v1.0.1 в /version.json. Деплои выполняются без одновременного
++изменения Deployment несколькими job.
++
++Kubernetes ServiceAccount github-deployer имеет права get/list/watch/patch
++только на Deployment diploma-app в namespace diploma. Ему не выданы права API
++на чтение Secrets или Nodes. RBAC и отдельный kubeconfig создаются скриптом
++scripts/create-cd-kubeconfig.py в инфраструктурном проекте. Административный
++kubeconfig в GitHub не передаётся.
++
++Перед первым релизом настройте KUBE_CONFIG и APP_URL в GitHub Actions.
++Затем создайте новый тег на коммите с обновлённым workflow:
++
++```bash
++git switch main
++git pull --ff-only
++git tag v1.0.1
++git push origin v1.0.1
++```
++
++Сохраните скриншот workflow с успешными build и deploy, а также страницу
++приложения с новой версией. Kubernetes-манифесты и мониторинг хранятся
++в инфраструктурном репозитории и устанавливаются отдельно.

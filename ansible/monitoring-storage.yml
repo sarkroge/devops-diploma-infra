@@ -1,0 +1,42 @@
+---
+- name: Prepare monitoring data directories
+  hosts: k8s-worker-2
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check whether monitoring storage was prepared
+      ansible.builtin.stat:
+        path: /var/lib/diploma-monitoring
+      register: monitoring_directory
+
+    - name: Check available filesystem space
+      ansible.builtin.command: df --output=avail -B1 /var/lib
+      register: monitoring_free_space
+      changed_when: false
+
+    - name: Verify space before the first monitoring installation
+      ansible.builtin.assert:
+        that:
+          - (monitoring_free_space.stdout_lines[-1] | trim | int) >= 3221225472
+        fail_msg: Less than 3 GiB free on worker-2; send df -h output before installing monitoring.
+      when: not monitoring_directory.stat.exists
+
+    - name: Create monitoring storage parent
+      ansible.builtin.file:
+        path: /var/lib/diploma-monitoring
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Prepare component data directories
+      ansible.builtin.file:
+        path: "/var/lib/diploma-monitoring/{{ item.name }}"
+        state: directory
+        owner: "{{ item.uid }}"
+        group: "{{ item.gid }}"
+        mode: "0770"
+      loop:
+        - {name: prometheus, uid: 1000, gid: 2000}
+        - {name: alertmanager, uid: 1000, gid: 2000}
+        - {name: grafana, uid: 472, gid: 472}

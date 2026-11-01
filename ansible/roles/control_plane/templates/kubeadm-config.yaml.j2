@@ -1,0 +1,59 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "{{ node_ip }}"
+  bindPort: 6443
+nodeRegistration:
+  name: "{{ inventory_hostname }}"
+  criSocket: "{{ cri_socket }}"
+  kubeletExtraArgs:
+    - name: node-ip
+      value: "{{ node_ip }}"
+timeouts:
+  controlPlaneComponentHealthCheck: 10m
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+clusterName: diploma
+kubernetesVersion: "v{{ kubernetes_version }}"
+controlPlaneEndpoint: "{{ node_ip }}:6443"
+networking:
+  podSubnet: "{{ pod_subnet }}"
+  serviceSubnet: "{{ service_subnet }}"
+  dnsDomain: cluster.local
+apiServer:
+  certSANs:
+    - "{{ node_ip }}"
+    - "{{ node_public_ip }}"
+    - "{{ inventory_hostname }}"
+controllerManager:
+  extraArgs:
+    - name: bind-address
+      value: "0.0.0.0"
+scheduler:
+  extraArgs:
+    - name: bind-address
+      value: "0.0.0.0"
+etcd:
+  local:
+    extraArgs:
+      - name: listen-metrics-urls
+        value: "http://127.0.0.1:2381,http://{{ node_ip }}:2381"
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+failSwapOn: true
+containerLogMaxSize: 10Mi
+containerLogMaxFiles: 3
+systemReserved:
+  cpu: 100m
+  memory: 128Mi
+kubeReserved:
+  cpu: 100m
+  memory: 128Mi
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+mode: iptables
+metricsBindAddress: "0.0.0.0:10249"

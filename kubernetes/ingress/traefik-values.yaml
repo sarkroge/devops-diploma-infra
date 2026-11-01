@@ -1,0 +1,64 @@
+deployment:
+  kind: DaemonSet
+
+nodeSelector:
+  node-role.kubernetes.io/worker: ""
+
+ingressClass:
+  enabled: true
+  isDefaultClass: false
+  name: traefik
+
+gateway:
+  enabled: false
+
+providers:
+  kubernetesCRD:
+    enabled: false
+  kubernetesGateway:
+    enabled: false
+  kubernetesIngress:
+    enabled: true
+    ingressClass: traefik
+    publishedService:
+      enabled: false
+
+ports:
+  web:
+    port: 8000
+    hostPort: 80
+    exposedPort: 80
+    asDefault: true
+  websecure:
+    expose:
+      default: false
+
+service:
+  spec:
+    type: ClusterIP
+
+ingressRoute:
+  dashboard:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 300m
+    memory: 192Mi
+
+api:
+  dashboard: false
+
+log:
+  level: WARN
+
+accessLog:
+  enabled: true
+
+metrics:
+  prometheus:
+    serviceMonitor:
+      enabled: false

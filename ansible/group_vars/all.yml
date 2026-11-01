@@ -1,0 +1,9 @@
+---
+kubernetes_version: "1.37.2"
+kubernetes_minor: "1.37"
+kubernetes_deb_version: "1.37.2-1.1"
+containerd_deb_version: "2.4.2-3~ubuntu.24.04~noble"
+flannel_version: "v0.28.10"
+pod_subnet: "10.244.0.0/16"
+service_subnet: "10.96.0.0/12"
+cri_socket: "unix:///run/containerd/containerd.sock"

@@ -1,0 +1,32 @@
+# Terraform local data and credentials
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.env
+.env.*
+!.env.example
+.secrets/
+backend.hcl
+backend.*.hcl
+sa-key.json
+*-key.json
+*.pem
+*.key
+kubeconfig*
+.DS_Store
+__pycache__/
+*.pyc
+# Commit .terraform.lock.hcl: it pins provider versions.

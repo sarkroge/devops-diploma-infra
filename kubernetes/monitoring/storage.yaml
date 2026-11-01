@@ -1,0 +1,91 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: diploma-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: diploma-prometheus
+  labels:
+    diploma-data: prometheus
+spec:
+  capacity:
+    storage: 2Gi
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: diploma-local
+  local:
+    path: /var/lib/diploma-monitoring/prometheus
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [k8s-worker-2]
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: diploma-alertmanager
+  labels:
+    diploma-data: alertmanager
+spec:
+  capacity:
+    storage: 128Mi
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: diploma-local
+  local:
+    path: /var/lib/diploma-monitoring/alertmanager
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [k8s-worker-2]
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: diploma-grafana
+  labels:
+    diploma-data: grafana
+spec:
+  capacity:
+    storage: 512Mi
+  volumeMode: Filesystem
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: diploma-local
+  local:
+    path: /var/lib/diploma-monitoring/grafana
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [k8s-worker-2]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: monitoring-grafana
+  namespace: monitoring
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: diploma-local
+  selector:
+    matchLabels:
+      diploma-data: grafana
+  resources:
+    requests:
+      storage: 512Mi

@@ -1,0 +1,181 @@
+fullnameOverride: monitoring
+
+grafana:
+  fullnameOverride: monitoring-grafana
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  nodeSelector:
+    kubernetes.io/hostname: k8s-worker-2
+  deploymentStrategy:
+    type: Recreate
+  persistence:
+    enabled: true
+    existingClaim: monitoring-grafana
+  initChownData:
+    enabled: false
+  serviceMonitor:
+    path: /grafana/metrics
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 384Mi
+  sidecar:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+    dashboards:
+      enabled: true
+      searchNamespace: monitoring
+      reloadURL: http://localhost:3000/grafana/api/admin/provisioning/dashboards/reload
+    datasources:
+      enabled: true
+      uid: prometheus
+      reloadURL: http://localhost:3000/grafana/api/admin/provisioning/datasources/reload
+  grafana.ini:
+    server:
+      protocol: http
+      serve_from_sub_path: true
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    plugins:
+      preinstall_disabled: true
+  readinessProbe:
+    httpGet:
+      path: /grafana/api/health
+      port: 3000
+  livenessProbe:
+    httpGet:
+      path: /grafana/api/health
+      port: 3000
+
+prometheusOperator:
+  nodeSelector:
+    kubernetes.io/hostname: k8s-worker-2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  prometheusConfigReloader:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 24Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-worker-2
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 24h
+    retentionSize: 512MB
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    nodeSelector:
+      kubernetes.io/hostname: k8s-worker-2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: diploma-local
+          accessModes: [ReadWriteOnce]
+          selector:
+            matchLabels:
+              diploma-data: prometheus
+          resources:
+            requests:
+              storage: 2Gi
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+    retention: 24h
+    nodeSelector:
+      kubernetes.io/hostname: k8s-worker-2
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 192Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: diploma-local
+          accessModes: [ReadWriteOnce]
+          selector:
+            matchLabels:
+              diploma-data: alertmanager
+          resources:
+            requests:
+              storage: 128Mi
+
+kube-state-metrics:
+  nodeSelector:
+    kubernetes.io/hostname: k8s-worker-2
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+kubeEtcd:
+  service:
+    port: 2381
+    targetPort: 2381
+  serviceMonitor:
+    scheme: http
+
+kubeControllerManager:
+  serviceMonitor:
+    https: true
+    tlsConfig:
+      insecureSkipVerify: true
+
+kubeScheduler:
+  serviceMonitor:
+    https: true
+    tlsConfig:
+      insecureSkipVerify: true

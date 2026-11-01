@@ -1,0 +1,97 @@
+name: Terraform infrastructure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serializes this repository's runs, not Terraform processes on a laptop.
+concurrency:
+  group: diploma-terraform-main
+  cancel-in-progress: false
+  queue: max
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_CLI_CONFIG_FILE: ${{ github.workspace }}/ci/terraform-provider-installation.hcl
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.12.0
+          terraform_wrapper: false
+      - name: Check formatting
+        run: terraform fmt -check -recursive terraform
+      - name: Validate both configurations without cloud credentials
+        run: |
+          for directory in terraform/bootstrap terraform/main; do
+            terraform -chdir="$directory" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$directory" validate -no-color
+          done
+
+  apply:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.12.0
+          terraform_wrapper: false
+      - name: Configure credentials and existing infrastructure inputs
+        env:
+          TF_SA_JSON_CREDENTIALS: ${{ secrets.TF_SA_JSON_CREDENTIALS }}
+          TF_INPUTS_JSON: ${{ secrets.TF_INPUTS_JSON }}
+        run: |
+          set -euo pipefail
+          test -n "$TF_SA_JSON_CREDENTIALS"
+          test -n "$TF_INPUTS_JSON"
+          test -n "$AWS_ACCESS_KEY_ID"
+          test -n "$AWS_SECRET_ACCESS_KEY"
+          test -n "$TF_STATE_BUCKET"
+          umask 077
+          printf '%s' "$TF_SA_JSON_CREDENTIALS" > "$RUNNER_TEMP/terraform-sa.json"
+          printf '%s' "$TF_INPUTS_JSON" > terraform/main/ci.auto.tfvars.json
+          python3 -c 'import json, pathlib; json.loads(pathlib.Path("terraform/main/ci.auto.tfvars.json").read_text())'
+          echo "YC_SERVICE_ACCOUNT_KEY_FILE=$RUNNER_TEMP/terraform-sa.json" >> "$GITHUB_ENV"
+      - name: Initialize existing S3 backend
+        run: terraform -chdir=terraform/main init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET"
+      - name: Plan infrastructure
+        run: terraform -chdir=terraform/main plan -input=false -no-color -out=ci.tfplan
+      - name: Apply saved plan
+        run: terraform -chdir=terraform/main apply -input=false -no-color ci.tfplan
+      - name: Confirm infrastructure matches configuration
+        run: terraform -chdir=terraform/main plan -input=false -no-color -detailed-exitcode
+      - name: Write run summary
+        run: |
+          {
+            echo '### Terraform infrastructure'
+            echo "Commit: $GITHUB_SHA"
+            echo 'Saved plan applied; verification plan returned no changes.'
+            echo 'State: S3 / diploma/main/terraform.tfstate'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove runner credentials and plan
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/terraform-sa.json" terraform/main/ci.auto.tfvars.json terraform/main/ci.tfplan

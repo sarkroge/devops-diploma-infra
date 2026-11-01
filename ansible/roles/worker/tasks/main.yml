@@ -1,0 +1,7 @@
+---
+- name: Join this worker once
+  ansible.builtin.command:
+    cmd: "{{ hostvars[groups['control_plane'][0]].kubeadm_join.stdout }} --cri-socket {{ cri_socket }} --node-name {{ inventory_hostname }}"
+    creates: /etc/kubernetes/kubelet.conf
+  when: not kubelet_config.stat.exists
+  no_log: true
