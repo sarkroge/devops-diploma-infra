@@ -1,0 +1,23 @@
+--- a/README.md
++++ b/README.md
+@@ -5,7 +5,8 @@
+ 
+ ## Репозитории и доступ
+ 
+-- Инфраструктура: `sarkroge/devops-diploma-infra`.
++- [Инфраструктура, Ansible и Kubernetes](https://github.com/sarkroge/devops-diploma-infra).
++- [Описание выполнения и доказательства для проверки](README-REVIEW.md).
+ - [Приложение, Dockerfile и CI/CD](https://github.com/sarkroge/devops-diploma-app).
+ - [Тестовое приложение](http://153.51.118.243/).
+ - [Grafana](http://153.51.118.243/grafana/), пользователь `admin`.
+@@ -15,8 +16,8 @@
+ 
+ Подтверждены: три Ready-узла, две реплики приложения, графики CPU и памяти,
+ 28/28 healthy scrape targets; сборка и автоматический деплой приложения по тегу
+-`v1.0.1` с проверкой публичной версии. Terraform workflow добавлен; его первый
+-запуск нужно подтвердить в Actions после настройки Secrets.
++`v1.0.1` с проверкой публичной версии. Terraform workflow успешно выполнил
++validate, подключение S3 backend, plan, apply и повторный plan без изменений.
+ 
+ ## Состав проекта
+ 
