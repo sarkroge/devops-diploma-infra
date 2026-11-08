@@ -1,6 +1,12 @@
 deployment:
   kind: DaemonSet
 
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 0
+
 nodeSelector:
   node-role.kubernetes.io/worker: ""
 

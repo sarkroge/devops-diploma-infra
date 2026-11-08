@@ -111,7 +111,7 @@ kubectl --context=diploma get nodes -o wide
 kubectl --context=diploma get pods -A
 ```
 
-Inventory создаётся из Terraform outputs. Worker 2 доступен по внутреннему IP
+Inventory создаётся из Terraform outputs. Оба worker доступны по внутренним IP
 через SSH ProxyCommand на control plane. Playbook устанавливает containerd,
 kubeadm, Flannel и присоединяет workers. В `PLAY RECAP` ожидаются
 `failed=0`, `unreachable=0`, затем три Ready-узла.
@@ -214,5 +214,5 @@ Workers остаются прерываемыми. Для времени про�
 автозапуска по [operations.md](operations.md). После нового развёртывания
 актуализируйте ссылки из outputs и передайте пароль Grafana отдельно.
 
-Полное пересоздание основной конфигурации готовится отдельно:
-[recreate.md](recreate.md). Его выполнение пока не подтверждено.
+Полное пересоздание основной конфигурации проверено 8 ноября 2026 года:
+[порядок](recreate.md), [результаты](verification-2026-11-08.md).

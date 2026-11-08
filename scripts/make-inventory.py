@@ -41,8 +41,8 @@ def main():
             'node_ip': private_ip,
             'node_public_ip': public_ip,
         }
-        if name == 'worker-2':
-            # This internal route was verified when public SSH timed out.
+        if group == 'workers':
+            # Connect to both workers through the control plane.
             host = children[group]['hosts'][node['hostname']]
             host['ansible_host'] = private_ip
             host['ansible_ssh_common_args'] = shlex.join(['-o', 'ProxyCommand=' + proxy_command])

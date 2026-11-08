@@ -44,10 +44,14 @@ locals {
 }
 
 resource "yandex_vpc_address" "nodes" {
+  lifecycle {
+    create_before_destroy = false
+  }
+
   for_each = { for name, node in local.cluster_nodes : name => node if node.reserve_public_ip }
 
   folder_id = var.folder_id
-  name      = "diploma-${each.key}-ip"
+  name      = each.key == "worker-1" ? "diploma-web-ip" : "diploma-${each.key}-ip"
 
   external_ipv4_address {
     zone_id = var.subnets[each.value.subnet_key].zone

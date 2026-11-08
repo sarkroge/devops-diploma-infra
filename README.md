@@ -6,14 +6,14 @@
 
 ## Ссылки
 
-- [Приложение](http://153.51.118.243/) и [его версия](http://153.51.118.243/version.json).
-- [Grafana](http://153.51.118.243/grafana/), пользователь `admin`; пароль передаётся отдельно.
+- [Приложение](http://153.51.116.138/) и [его версия](http://153.51.116.138/version.json).
+- [Grafana](http://153.51.116.138/grafana/), пользователь `admin`; пароль передаётся отдельно.
 - [Репозиторий приложения](https://github.com/sarkroge/devops-diploma-app).
 - [Terraform pipeline](https://github.com/sarkroge/devops-diploma-infra/actions/workflows/terraform.yml).
 - [Сборка и деплой приложения](https://github.com/sarkroge/devops-diploma-app/actions/workflows/build.yml).
 - [Результаты для проверки](README-REVIEW.md).
 
-Образ: `cr.yandex/crpi32ickihldl29g1fg/diploma-app:v1.0.1`.
+Образ: `cr.yandex/crppnmgn0v38rkpjb2r0/diploma-app:v1.0.2`.
 Реестр приватный; кластер получает образы через отдельный аккаунт puller.
 
 ## Стенд
@@ -68,16 +68,18 @@ Kubernetes занимают время; непрерывная доступно�
 kubectl --context=diploma get nodes -o wide
 kubectl --context=diploma get pods -A
 python3 scripts/verify-monitoring.py
-curl -fsS --max-time 20 http://153.51.118.243/healthz
-curl -fsS --max-time 20 http://153.51.118.243/version.json
+curl -fsS --max-time 20 http://153.51.116.138/healthz
+curl -fsS --max-time 20 http://153.51.116.138/version.json
 ```
 
 8 ноября 2026 года подтверждены три Ready-узла, две реплики, 28/28 healthy targets
-и версия `v1.0.1`.
+и версия `v1.0.2`. Релиз прошёл [build и deploy](https://github.com/sarkroge/devops-diploma-app/actions/runs/42511977448).
 
 Prometheus хранит метрики 24 часа. Local PV расположены на boot-диске worker 2:
-остановку ВМ данные переживают, удаление ВМ — нет. Полный цикл destroy/apply
-пока не подтверждён; [подготовка пересоздания](docs/recreate.md).
+остановку ВМ данные переживают, удаление ВМ — нет. 8 ноября выполнены удаление
+и создание 13 ресурсов main, восстановление пяти образов и установка нового
+кластера. Очистку образов перед Terraform автоматизирует отдельный скрипт;
+[порядок пересоздания](docs/recreate.md), [результаты проверки](docs/verification-2026-11-08.md).
 
 ## Инструкции
 
