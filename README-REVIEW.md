@@ -23,17 +23,17 @@ Grafana: пользователь `admin`, пароль передаю отде�
 
 | Требование | Реализация | Подтверждение |
 | --- | --- | --- |
-| Terraform, сервисный аккаунт и внешний state | Раздельные [bootstrap](terraform/bootstrap) и [main](terraform/main), закрытый версионируемый S3-бакет | [Успешный Terraform pipeline](https://github.com/sarkroge/devops-diploma-infra/actions/runs/41347055031) |
+| Terraform, сервисный аккаунт и внешний state | Раздельные [bootstrap](terraform/bootstrap) и [main](terraform/main), закрытый версионируемый S3-бакет | [Успешный Terraform pipeline](https://github.com/sarkroge/devops-diploma-infra/actions/runs/42514176590) |
 | Удаление и повторное создание main | 13 ресурсов, автоматическая очистка и восстановление Registry | [Сценарий](docs/recreate.md), [проверка 8 ноября](docs/verification-2026-11-08.md) |
 | Сеть и подсети в разных зонах | VPC с подсетями a/d/e, три ВМ | [Конфигурации](terraform/main) |
 | Самостоятельный Kubernetes | kubeadm, containerd, Flannel; один control plane и два прерываемых worker | [Ansible recap](docs/evidence/01-ansible-recap.png), [Ready-узлы](docs/evidence/02-kubernetes-ready.png) |
 | Собственное приложение и Dockerfile | Статическая страница nginx, health endpoint, версия | [Исходники](https://github.com/sarkroge/devops-diploma-app), [первый релиз](docs/evidence/03-app-v1.0.0.png) |
-| Мониторинг | Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics | [Проверка компонентов](docs/evidence/04-monitoring-check.png), [дашборд](docs/evidence/05-grafana-dashboard.png) |
-| Terraform CI | Каждый push в main: validate, plan, apply и повторный plan | [Workflow](.github/workflows/terraform.yml), [результат](docs/evidence/07-terraform-apply.png) |
+| Мониторинг | Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics | [Проверка компонентов](docs/evidence/04-monitoring-check.png), [дашборд, 8 ноября](docs/evidence/11-grafana-dashboard-2026-11-08.png) |
+| Terraform CI | Каждый push в main: validate, plan, apply и повторный plan | [Workflow](.github/workflows/terraform.yml), [результат](https://github.com/sarkroge/devops-diploma-infra/actions/runs/42514176590) |
 | CI/CD приложения | Сборка и публикация на push, деплой по тегу, проверка публичной версии | [Workflow](https://github.com/sarkroge/devops-diploma-app/blob/main/.github/workflows/build.yml), [деплой v1.0.2](docs/evidence/09-app-cd-v1.0.2.png), [Actions](https://github.com/sarkroge/devops-diploma-app/actions/runs/42511977448) |
 
 Скриншоты первоначальной установки сделаны 1 ноября 2026 года; они сохранены
-как история. Подтверждения релиза v1.0.2 — от 8 ноября. После пересоздания
+как история. Подтверждения релиза v1.0.2 и дашборда — от 8 ноября. После пересоздания
 проверены три Ready-узла, две реплики приложения, 28/28 healthy scrape targets,
 Grafana health = `ok`. [Публичная версия](docs/evidence/10-app-version-v1.0.2.png) — `v1.0.2`.
 
