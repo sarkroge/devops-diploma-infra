@@ -35,6 +35,10 @@ jobs:
         with:
           terraform_version: 1.12.0
           terraform_wrapper: false
+      - name: Check Python scripts and function source
+        run: |
+          python3 scripts/build-worker-restarter.py --check
+          python3 -m unittest discover -s tests -v
       - name: Check formatting
         run: terraform fmt -check -recursive terraform
       - name: Validate both configurations without cloud credentials

@@ -10,6 +10,33 @@ import urllib.request
 from pathlib import Path
 
 
+def wait_for_targets(request, forward, timeout=120, interval=5):
+    """Wait for scrape targets to recover, keeping the final error details."""
+    deadline = time.monotonic() + timeout
+    targets = []
+    last_error = None
+    while True:
+        if forward.poll() is not None:
+            raise SystemExit('Port-forward stopped while waiting for scrape targets.')
+        try:
+            targets = request('/api/v1/targets')['data']['activeTargets']
+            last_error = None
+            if targets and all(target.get('health') == 'up' for target in targets):
+                return targets
+        except (OSError, ValueError, KeyError) as error:
+            last_error = str(error)
+            targets = []
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(interval, remaining))
+    if last_error is not None:
+        raise SystemExit(f'Cannot read scrape targets: {last_error}')
+    if not targets:
+        raise SystemExit('Prometheus returned no active scrape targets.')
+    return targets
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
     with socket.socket() as listener:
@@ -51,14 +78,14 @@ def main():
                 raise SystemExit(f'Metrics have not reached the expected values: {values}. Retry after checking pod status.')
             for name, value in values.items():
                 print(f'{name}: {value:g}')
-            targets = request('/api/v1/targets')['data']['activeTargets']
+            targets = wait_for_targets(request, forward)
             down = [target for target in targets if target.get('health') != 'up']
             print(f'Healthy scrape targets: {len(targets) - len(down)}/{len(targets)}')
             for target in down:
                 labels = target.get('labels', {})
                 print(f'Unhealthy: {labels.get("job")} {labels.get("instance")}: {target.get("lastError")}')
             if down:
-                raise SystemExit('Some scrape targets are unhealthy. Send the lines above for diagnosis.')
+                raise SystemExit('Scrape targets are still unhealthy after waiting; inspect the errors above.')
             print('Monitoring verification passed.')
         finally:
             forward.terminate()

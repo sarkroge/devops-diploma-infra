@@ -1,0 +1,87 @@
+--- a/README.md
++++ b/README.md
+@@ -129,7 +129,29 @@
+ и без apply. Bootstrap в CI не применяется. State и plan не публикуются
+ как Actions artifacts.
+ 
++## Автозапуск прерываемых workers
++
++Конфигурация в `terraform/bootstrap/worker-availability.tf` добавляет приватную
++Cloud Function и таймер проверки каждые две минуты. Функция находит только
++`diploma-worker-1` и `diploma-worker-2` с метками проекта/роли и запускает их
++только в состоянии STOPPED. ID определяются заново после пересоздания ВМ.
++
++Включение ограничено по времени: `scripts/configure-availability.py on --hours 72`
++готовит локальные переменные; изменение вступает в силу после bootstrap apply.
++После указанного UTC-срока функция не запускает ВМ. Сам таймер до отключения
++продолжает вызывать функцию. Для полного отключения используйте `off` и
++bootstrap apply, как описано в [STEP-11.md](STEP-11.md).
++
++Runtime-аккаунт имеет `compute.operator` и `logging.writer` на каталог, а аккаунт
++таймера — право вызова только этой функции. Код ограничивает выбор двумя workers;
++IAM-роль compute.operator действует на весь каталог. Новые ключи аккаунтов
++не создаются. Перезапуск ВМ не гарантирует мгновенную готовность Kubernetes
++или наличие свободных ресурсов в зоне.
++
+ ## Экономия
++
++**Перед ручной остановкой ВМ отключите автозапуск по STEP-11.md.** Иначе функция
++запустит остановленные workers снова. `nodes.sh stop` проверяет активное окно.
+ 
+ Из корня проекта: `bash scripts/nodes.sh status`, затем
+ `bash scripts/nodes.sh stop` после работы. Для продолжения —
+--- a/.github/workflows/terraform.yml
++++ b/.github/workflows/terraform.yml
+@@ -35,6 +35,10 @@
+         with:
+           terraform_version: 1.12.0
+           terraform_wrapper: false
++      - name: Check worker restarter source and safety tests
++        run: |
++          python3 scripts/build-worker-restarter.py --check
++          python3 -m unittest discover -s tests -p test_worker_restarter.py -v
+       - name: Check formatting
+         run: terraform fmt -check -recursive terraform
+       - name: Validate both configurations without cloud credentials
+--- a/scripts/nodes.sh
++++ b/scripts/nodes.sh
+@@ -6,12 +6,26 @@
+ 
+ case "$action" in
+   status)
+-    yc compute instance list --folder-id "${TF_VAR_folder_id:?Set TF_VAR_folder_id first}"
++    folder_id="${TF_VAR_folder_id:-$(yc config get folder-id)}"
++    yc compute instance list --folder-id "$folder_id"
+     exit 0
+     ;;
+   start|stop) ;;
+   *) printf '%s\n' 'Usage: bash scripts/nodes.sh status|start|stop' >&2; exit 2 ;;
+ esac
++
++if [[ "$action" == stop ]]; then
++  if availability_info="$(terraform -chdir="$project_dir/terraform/bootstrap" output -json worker_availability 2>/dev/null)"; then
++    printf '%s' "$availability_info" | python3 -c '
++from datetime import datetime, timezone
++import json, sys
++settings = json.load(sys.stdin)
++deadline = datetime.fromisoformat(settings["until"].replace("Z", "+00:00"))
++if settings["enabled"] and datetime.now(timezone.utc) < deadline:
++    raise SystemExit("Worker autostart is active. Disable it using STEP-11.md before stopping VMs.")
++'
++  fi
++fi
+ 
+ node_data="$(terraform -chdir="$project_dir/terraform/main" output -json nodes)"
+ node_ids="$(printf '%s' "$node_data" | python3 -c '
+@@ -26,6 +40,11 @@
+ ' "$action")"
+ 
+ while IFS= read -r node_id; do
++  status="$(yc compute instance get --id "$node_id" --format=json | python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])')"
++  if [[ "$action" == start && "$status" == RUNNING ]] || [[ "$action" == stop && "$status" == STOPPED ]]; then
++    printf '%s\n' "$node_id: already $status"
++    continue
++  fi
+   yc compute instance "$action" --id "$node_id"
+ done <<< "$node_ids"
+ 

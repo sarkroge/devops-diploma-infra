@@ -1,0 +1,165 @@
+--- a/terraform/bootstrap/worker-availability.tf
++++ b/terraform/bootstrap/worker-availability.tf
+@@ -32,22 +32,10 @@
+   member    = "serviceAccount:${yandex_iam_service_account.worker_restarter.id}"
+ }
+ 
+-resource "yandex_resourcemanager_folder_iam_member" "worker_restarter_logs" {
+-  folder_id = var.folder_id
+-  role      = "logging.writer"
+-  member    = "serviceAccount:${yandex_iam_service_account.worker_restarter.id}"
+-}
+-
+ resource "yandex_iam_service_account" "worker_restarter_trigger" {
+   folder_id   = var.folder_id
+   name        = "diploma-worker-timer"
+   description = "Invoke only the diploma worker restarter function"
+-}
+-
+-resource "yandex_logging_group" "worker_restarter" {
+-  folder_id        = var.folder_id
+-  name             = "diploma-worker-restarter"
+-  retention_period = "24h"
+ }
+ 
+ resource "yandex_function" "worker_restarter" {
+@@ -77,14 +65,14 @@
+     zip_filename = "${path.module}/../../functions/worker-restarter/function.zip"
+   }
+ 
++  # Autostart must not depend on availability of the Cloud Logging API.
++  # Direct invocation still returns the handler result for diagnostics.
+   log_options {
+-    log_group_id = yandex_logging_group.worker_restarter.id
+-    min_level    = "INFO"
++    disabled = true
+   }
+ 
+   depends_on = [
+     yandex_resourcemanager_folder_iam_member.worker_restarter_compute,
+-    yandex_resourcemanager_folder_iam_member.worker_restarter_logs,
+   ]
+ }
+ 
+@@ -122,7 +110,8 @@
+     until            = var.workers_autostart_until
+     function_id      = yandex_function.worker_restarter.id
+     trigger_id       = try(yandex_function_trigger.worker_restarter[0].id, null)
+-    log_group_id     = yandex_logging_group.worker_restarter.id
++    log_group_id     = null
++    logging_enabled  = false
+     runtime_account  = yandex_iam_service_account.worker_restarter.id
+     interval_minutes = 2
+   }
+--- a/STEP-11.md
++++ b/STEP-11.md
+@@ -6,17 +6,21 @@
+ При отсутствии свободных ресурсов запуск может задержаться; после старта
+ требуется время на загрузку ОС и восстановление Kubernetes.
+ 
++Перед продолжением после ошибки Cloud Logging примените исправление из
++[FIX-WORKER-LOGGING.md](FIX-WORKER-LOGGING.md). Старый архив шага 11 содержит
++первоначальную конфигурацию; установку исправления выполняют после его распаковки.
++
+ ## Что добавлено
+ 
+ В `terraform/bootstrap/worker-availability.tf`:
+ 
+-- Runtime ServiceAccount: compute.operator и logging.writer на каталог.
++- Runtime ServiceAccount: compute.operator на каталог.
+ - Отдельный аккаунт таймера с правом вызова только новой функции.
+ - Приватная функция Python 3.12, 128 МБ RAM, таймаут 60 секунд.
+-- Группа логов с хранением 24 часа.
++- Cloud Logging отключён через log_options.disabled=true; группа логов не требуется.
+ - Таймер каждые две минуты, создаётся при включении.
+ 
+-При первом включении ожидается **8 to add, 0 to change, 0 to destroy**.
++При первом включении ожидается **6 to add, 0 to change, 0 to destroy**.
+ Существующие ВМ, сеть, state-бакет и реестр этот шаг не изменяет.
+ Права аккаунта diploma-terraform не расширяются. Bootstrap выполняется от
+ пользователя, как при первоначальном создании IAM и бакета.
+@@ -75,8 +79,10 @@
+ terraform -chdir=terraform/bootstrap plan -out=../../.secrets/availability.tfplan
+ ```
+ 
+-Ожидаются 8 новых ресурсов. Если план предлагает заменить или удалить существующие
+-ресурсы, сначала разберите его. Сохраните окончание плана для проверки.
++При установке с нуля ожидаются 6 новых ресурсов. После частичного apply старой
++версии ожидаются 3 to add, 0 to change, 1 to destroy: удаляется только выдача
++logging.writer для worker_restarter_logs. ВМ и сервисные аккаунты не удаляются.
++Если план отличается, сначала разберите его. Сохраните окончание плана для проверки.
+ 
+ ## 3. Применить сохранённый план и проверить без остановки ВМ
+ 
+@@ -110,12 +116,9 @@
+   "$(terraform -chdir=terraform/bootstrap output -json worker_availability | python3 -c 'import json,sys; print(json.load(sys.stdin)["trigger_id"])')"
+ ```
+ 
+-Первичная активация нового триггера может занять несколько минут. Логи доступны
+-в Cloud Functions → diploma-worker-restarter → Логи, либо:
+-
+-```bash
+-yc serverless function logs diploma-worker-restarter --folder-id "$TF_VAR_folder_id"
+-```
++Первичная активация нового триггера может занять несколько минут. Cloud Logging
++отключён: накопленных логов функции нет. Dry-run возвращает результат напрямую.
++Работу таймера проверяем следующим тестом автоматического старта ВМ.
+ 
+ ## 4. Проверить автоматический запуск одной ВМ
+ 
+@@ -134,10 +137,14 @@
+ yc compute instance list --folder-id "$TF_VAR_folder_id"
+ ```
+ 
+-Не запускайте ВМ вручную во время этого теста. Дождитесь RUNNING и записи функции
+-с action=start_requested для diploma-worker-1. Сохраните оба подтверждения.
+-Если за 5–10 минут запуска нет, проверьте активность таймера и логи функции.
+-При нехватке ресурсов функция повторит попытку на следующем тике.
++Не запускайте ВМ или функцию вручную во время этого теста. Дождитесь RUNNING;
++сохраните вывод STOPPED и последующий RUNNING с временем проверки. Это проверка
++восстановления через таймер при отсутствии других механизмов запуска.
++Если за 5–10 минут запуска нет, проверьте активность таймера и выполните только
++dry-run: он покажет доступность Compute API и выбор workers. Сам dry-run не
++доказывает вызов по расписанию. При нехватке ресурсов возможны задержки.
++Для восстановления доступа после неуспешного теста worker-1 можно запустить
++вручную, отметив, что тест таймера не пройден.
+ 
+ После RUNNING:
+ 
+@@ -166,7 +173,8 @@
+   terraform/bootstrap/worker-availability.tf functions/worker-restarter \
+   scripts/build-worker-restarter.py scripts/configure-availability.py \
+   scripts/prepare-recreate.py scripts/nodes.sh tests/test_worker_restarter.py \
+-  .github/workflows/terraform.yml patches/worker-availability.patch &&
++  .github/workflows/terraform.yml patches/worker-availability.patch \
++  patches/worker-no-logging.patch FIX-WORKER-LOGGING.md &&
+ python3 scripts/check-git-files.py &&
+ git commit -m "Recover stopped preemptible workers during review window" &&
+ git push origin main
+@@ -201,7 +209,7 @@
+ 
+ По истечении until функция перестаёт отправлять start, но таймер продолжает
+ вызывать её до отключения. Уже запущенные ВМ по сроку функция не останавливает.
+-Вызовы, хранение логов и работающие ВМ тарифицируются по условиям провайдера;
++Вызовы функции и работающие ВМ тарифицируются по условиям провайдера;
+ точная стоимость этим решением не ограничивается.
+ 
+ ## Далее: destroy/apply
+@@ -224,3 +232,5 @@
+ - https://yandex.cloud/ru/docs/functions/security/
+ - https://yandex.cloud/ru/docs/functions/operations/trigger/timer-create
+ - https://github.com/yandex-cloud/terraform-provider-yandex/tree/v0.243.0/docs/resources
++
++- https://yandex.cloud/ru/docs/functions/operations/function/logs-write
+--- a/README.md
++++ b/README.md
+@@ -142,7 +142,8 @@
+ продолжает вызывать функцию. Для полного отключения используйте `off` и
+ bootstrap apply, как описано в [STEP-11.md](STEP-11.md).
+ 
+-Runtime-аккаунт имеет `compute.operator` и `logging.writer` на каталог, а аккаунт
++Cloud Logging для функции отключён; проверка выполняется через dry-run и тест
++автоматического запуска worker-1. Runtime-аккаунт имеет `compute.operator` на каталог, а аккаунт
+ таймера — право вызова только этой функции. Код ограничивает выбор двумя workers;
+ IAM-роль compute.operator действует на весь каталог. Новые ключи аккаунтов
+ не создаются. Перезапуск ВМ не гарантирует мгновенную готовность Kubernetes
